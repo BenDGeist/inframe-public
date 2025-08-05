@@ -26,6 +26,7 @@ class ContextRecorder:
         self.openai_api_key = openai_api_key
         self.is_recording = False
         self.cache_file = Path(cache_file)
+        self._id = str(uuid.uuid4())  # Generate unique ID for this instance
         
         # Ensure cache directory exists
         self.cache_file.parent.mkdir(parents=True, exist_ok=True)
@@ -35,7 +36,8 @@ class ContextRecorder:
         self.recordings_dir.mkdir(exist_ok=True)
         
         self.recorders = {}
-        self.active_recorders = 0   
+        self.active_recorders = 0
+        self.active_queries = {}  # recorder_id -> set of query_ids   
         
         session_title = f"Context Recording Session - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         self.context_integrator = create_context_integrator(
@@ -45,6 +47,31 @@ class ContextRecorder:
         
         # Context export callback
         self.context_integrator.set_callback(self._on_context_update)
+    
+    def __hash__(self):
+        """Make ContextRecorder hashable using its unique ID"""
+        return hash(self._id)
+    
+    def __eq__(self, other):
+        """Check equality based on unique ID"""
+        if isinstance(other, ContextRecorder):
+            return self._id == other._id
+        return False
+    
+    @property
+    def id(self):
+        """Get the unique ID for this recorder"""
+        return self._id
+    
+    def register_query(self, recorder_id: str, query_id: str):
+        """Register a query as active on this recorder"""
+        if recorder_id in self.active_queries:
+            self.active_queries[recorder_id].add(query_id)
+    
+    def unregister_query(self, recorder_id: str, query_id: str):
+        """Unregister a query from this recorder"""
+        if recorder_id in self.active_queries:
+            self.active_queries[recorder_id].discard(query_id)
         
     async def _on_context_update(self, context_update):
         """Callback called when context is updated - exports to cache file"""
@@ -96,6 +123,7 @@ class ContextRecorder:
         )
 
         self.recorders[recorder_id] = config
+        self.active_queries[recorder_id] = set()  # Initialize empty query set
 
         return recorder_id
 
@@ -140,10 +168,15 @@ class ContextRecorder:
             print(f"❌ Error starting recording: {e}")
             return False
     
-    async def stop(self, recorder_id: str) -> None:
+    async def stop(self, recorder_id: str) -> bool:
         """Stop the recording session"""
         if not self.recorders[recorder_id].is_recording:
-            return
+            return True  # Already stopped, consider it success
+        
+        # Check if there are active queries on this recorder
+        if recorder_id in self.active_queries and self.active_queries[recorder_id]:
+            active_count = len(self.active_queries[recorder_id])
+            raise ValueError(f"Cannot stop recorder - it has {active_count} active queries. Stop queries first.")
         
         try:
             config = self.recorders[recorder_id]
@@ -153,9 +186,20 @@ class ContextRecorder:
 
             print("🛑 Stopping context recording...")
             
-            # Stop components in reverse order
-            await transcription_pipeline.stop_pipeline()
-            await video_stream.stop_stream()
+            # Stop components in reverse order with more aggressive timeouts
+            print("📋 Stopping transcription pipeline...")
+            try:
+                await asyncio.wait_for(transcription_pipeline.stop_pipeline(), timeout=5.0)
+                print("✅ Transcription pipeline stopped")
+            except asyncio.TimeoutError:
+                print("⚠️ Transcription pipeline stop timed out")
+            
+            print("📹 Stopping video stream...")
+            try:
+                await asyncio.wait_for(video_stream.stop_stream(), timeout=5.0)
+                print("✅ Video stream stopped")
+            except asyncio.TimeoutError:
+                print("⚠️ Video stream stop timed out")
             
             config.is_recording = False
             self.active_recorders -= 1
@@ -163,21 +207,42 @@ class ContextRecorder:
                 self.is_recording = False
             print("✅ Context recording stopped")
             
+            return True
+            
         except Exception as e:
             print(f"❌ Error stopping recording: {e}")
+            return False
     
-    async def shutdown(self):
-        """Gracefully shutdown all recorders"""
-        # Stop all active recorders with proper exception handling
-        for recorder_id in list(self.recorders.keys()):
-            if self.recorders[recorder_id].is_recording:
-                try:
-                    await self.stop(recorder_id)
-                except Exception as e:
-                    print(f"❌ Error stopping recorder {recorder_id[:8]}: {e}")
+    async def shutdown(self) -> bool:
+        """Shutdown the entire recorder system - stops all recordings and the context integrator"""
+        try:
+            print("🔄 Shutting down ContextRecorder...")
             
-        self.is_recording = False
-        self.active_recorders = 0
+            # Stop all active recordings
+            active_recorder_ids = list(self.recorders.keys())
+            for recorder_id in active_recorder_ids:
+                if self.recorders[recorder_id].is_recording:
+                    print(f"Stopping recorder {recorder_id[:8]}...")
+                    try:
+                        await self.stop(recorder_id)
+                    except Exception as e:
+                        print(f"❌ Error stopping recorder {recorder_id[:8]}: {e}")
+            
+            # Stop the shared context integrator
+            await self.context_integrator.stop_integrator()
+            
+            # Clear all state
+            self.recorders.clear()
+            self.active_queries.clear()
+            self.is_recording = False
+            self.active_recorders = 0
+            
+            print("✅ ContextRecorder shutdown complete")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error during shutdown: {e}")
+            return False
     
     async def get_status(self, recorder_id) -> Dict[str, Any]:
         """Get current recording status"""

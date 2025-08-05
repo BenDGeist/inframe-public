@@ -16,6 +16,7 @@ class QueryConfig:
     callback: Optional[Callable[[QueryResult], Awaitable[None]]]
     recorder: Any  # ContextRecorder
     interval_seconds: float
+    recorder_internal_id: Optional[str] = None  # Store the internal recorder ID for tracking
 
 class ContextQuery:
     """Unified query system that monitors recorders and runs prompts on context updates"""
@@ -23,6 +24,7 @@ class ContextQuery:
     def __init__(self, openai_api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
         self.openai_api_key = openai_api_key
         self.model = model
+        self._id = str(uuid.uuid4())  # Generate unique ID for this instance
         
         # Query storage
         self.queries: Dict[str, QueryConfig] = {}
@@ -30,6 +32,21 @@ class ContextQuery:
         
         # State
         self.is_running = False
+    
+    def __hash__(self):
+        """Make ContextQuery hashable using its unique ID"""
+        return hash(self._id)
+    
+    def __eq__(self, other):
+        """Check equality based on unique ID"""
+        if isinstance(other, ContextQuery):
+            return self._id == other._id
+        return False
+    
+    @property
+    def id(self):
+        """Get the unique ID for this query"""
+        return self._id
         
     def add_query(self, prompt: str, recorder, callback: Optional[Callable[[QueryResult], Awaitable[None]]] = None, 
                   interval_seconds: float = 30.0) -> str:
@@ -48,27 +65,38 @@ class ContextQuery:
         print(f"📊 Added query: {prompt[:50]}...")
         return query_id
     
-    async def start(self, query_id: Optional[str] = None):
+    async def start(self, query_id: Optional[str] = None) -> bool:
         """Start monitoring. If query_id specified, start only that query, otherwise start all"""
-        if query_id:
-            if query_id in self.queries:
-                await self._start_query(query_id)
+        try:
+            if query_id:
+                if query_id in self.queries:
+                    await self._start_query(query_id)
+                else:
+                    print(f"❌ Query ID {query_id} not found")
+                    return False
             else:
-                print(f"❌ Query ID {query_id} not found")
-        else:
-            # Start all queries
-            for qid in self.queries.keys():
-                await self._start_query(qid)
-            self.is_running = True
-            
-        print(f"🚀 Started query monitoring")
+                # Start all queries
+                for qid in self.queries.keys():
+                    await self._start_query(qid)
+                self.is_running = True
+                
+            print(f"🚀 Started query monitoring")
+            return True
+        except Exception as e:
+            print(f"❌ Error starting query: {e}")
+            return False
     
-    async def stop(self, query_id: Optional[str] = None):
+    async def stop(self, query_id: Optional[str] = None) -> bool:
         """Stop monitoring. If query_id specified, stop only that query, otherwise stop all"""
-        if query_id:
-            await self._stop_query(query_id)
-            
-        print(f"🛑 Stopped query monitoring")
+        try:
+            if query_id:
+                await self._stop_query(query_id)
+                
+            print(f"🛑 Stopped query monitoring")
+            return True
+        except Exception as e:
+            print(f"❌ Error stopping query: {e}")
+            return False
     
     async def shutdown(self):
         """Gracefully shutdown all queries"""
@@ -89,8 +117,9 @@ class ContextQuery:
             
         config = self.queries[query_id]
         
+        # Check if recorder is running before starting query
         if not config.recorder.is_recording:
-            raise ValueError("Recorder must be started before attaching queries")
+            raise ValueError("Recorder must be running before starting queries")
         
         # Create context querier for this query
         context_querier = create_context_querier(

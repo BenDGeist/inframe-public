@@ -1,167 +1,196 @@
 #!/usr/bin/env python3
 """
-Simple Agent Example - Demonstrates basic usage of the inframe package
+API Docs Detection Demo - Clean version for demonstrations
 
-This example shows how to:
-1. Set up a ContextRecorder for screen recording
-2. Create ContextQuery for intelligent monitoring
-3. Handle callbacks for real-time events
+This demo shows how the system can:
+1. Detect when you're viewing API documentation
+2. Extract function names and URLs automatically
+3. Present the information in a clean, structured format
+
+Optimized for fast startup and clean demos.
 """
 
 import os
 import asyncio
+import logging
 from inframe import ContextRecorder, ContextQuery
 
-class SimpleAgent:
+# Suppress all the verbose logging for clean demos
+logging.getLogger().setLevel(logging.ERROR)
+
+class CleanAPIDocsDemo:
     def __init__(self, openai_api_key: str):
         self.openai_api_key = openai_api_key
-        self.recorder = ContextRecorder(openai_api_key=openai_api_key)
-        self.query = ContextQuery(openai_api_key=openai_api_key, model="gpt-4o")
+        # Defer heavy initialization until needed
+        self.recorder = None
+        self.query = None
         self.recorder_id = None
-        self.ide_query_id = None
-        self.directory_query_id = None
+        self.detection_query_id = None
+        self.details_query_id = None
         self._cleanup_done = False
-
-    async def post_init(self):
-        print("🚀 Starting Simple Code Agent")
         
-        # First add the recorder with configuration
-        self.recorder_id = self.recorder.add_recorder(
-            include_apps=["Visual Studio Code", "Cursor", "PyCharm", "IntelliJ IDEA"],
-            recording_mode="full_screen",
-            visual_task=(
-                "Describe the screen content focusing on: "
-                "1. Application names and window titles "
-                "2. File explorer panels and folder names "
-                "3. File names and directory structures "
-                "4. UI elements like buttons, tabs, and panels "
-                "5. The current file path and file name"
-                "Be specific about folder names and project structure."
-            )
-        )
-        # Then start it
-        success = await self.recorder.start(self.recorder_id)
-        if not success:
-            raise Exception("Failed to start recorder")
-        
-        # Add IDE detection query
-        self.ide_query_id = self.query.add_query(
-            prompt=(
-                "Look at the screen content and determine if a coding IDE (like VS Code, Cursor, PyCharm, "
-                "IntelliJ IDEA, Sublime Text, Atom, etc.) is currently visible and being used. "
-                "Respond with YES or NO."
-            ),
-            recorder=self.recorder,
-            callback=self.on_ide_detected,
-            interval_seconds=3  # Check every 3 seconds
-        )
 
-        self.directory_query_id = self.query.add_query(
-                    prompt=(
-                        "Look at the screen and identify the file the user is working on. "
-                        "Look specifically for: "
-                        "1. The file name in the file explorer hierarchy "
-                        "2. The file name in the window title bar "
-                        "DO NOT infer from file names or content - find the actual folder name displayed. "
-                        "DO NOT use placeholder text like 'actual_folder_name_here' - use the real folder name you see. "
-                        "Respond with the folder name only, no other text."
-                    ),
-                    recorder=self.recorder,
-                    callback=self.on_directory_detected,
-                    interval_seconds=3
-                )                
-        
-        await self.query.start(self.ide_query_id)
-
-    async def on_ide_detected(self, result):
+    async def on_docs_detected(self, result):
         try:
             if not result.answer or result.answer.strip() == "":
-                print(f"❌ Empty answer from query (confidence: {result.confidence})")
                 return
                 
-            # The answer is already extracted from JSON, just use it directly
             answer = result.answer.upper()
             confidence = result.confidence
             
-            if answer == "YES" and confidence > 0.8:
-                print("✅ IDE DETECTED! Starting directory name query...")
+            if answer == "YES" and confidence > 0.7:
+                print("\n🎯 API DOCUMENTATION DETECTED!")
+                print(f"   Confidence: {confidence:.1%}")
+                print("   Extracting details...")
                 
-                await self.query.stop(self.ide_query_id)
-                
-                await self.query.start(self.directory_query_id)
+                await self.query.stop(self.detection_query_id)
+                await self.query.start(self.details_query_id)
                 
         except Exception as e:
-            print(f"❌ Error in IDE detection callback: {e}")
+            print(f"❌ Detection error: {e}")
 
-    async def on_directory_detected(self, result):
+    async def on_details_extracted(self, result):
         try:
             if not result.answer or result.answer.strip() == "":
-                print(f"❌ Empty answer from query (confidence: {result.confidence})")
                 return
                 
-            # The answer is already extracted from JSON, just use it directly
-            directory_name = result.answer
+            details = result.answer
             confidence = result.confidence
             
-            if confidence > 0.6:
-                print(f"✅ DIRECTORY DETECTED: {directory_name} (confidence: {confidence})")
+            if confidence > 0.4:
+                print("\n📊 EXTRACTION RESULTS")
+                print("=" * 50)
+                print(f"Confidence: {confidence:.1%}")
+                print("-" * 50)
+                print(f"📝 {details}")
+                print("=" * 50)
+                print("✅ Demo completed successfully!")
                 
-                await self.graceful_shutdown()
+                await self.shutdown()
+            else:
+                print(f"❌ Confidence too low ({confidence:.3f}) for details extraction")
                 
         except Exception as e:
-            print(f"❌ Error in directory detection callback: {e}")
-            print(f"   Answer: '{result.answer}'")
-            print(f"   Confidence: {result.confidence}")
-            print(f"   Error: {result.error if result.error else 'None'}")
+            print(f"❌ Extraction error: {e}")
 
-    async def graceful_shutdown(self):
-        """Gracefully shutdown all components"""
+    async def shutdown(self):
+        """Clean shutdown of all components"""
         if self._cleanup_done:
             return
             
         self._cleanup_done = True
-        await self.query.shutdown()
-        await self.recorder.shutdown()
-
-    async def stop_session(self):
-        """Stop session - just calls graceful_shutdown"""
-        await self.graceful_shutdown()
+        if self.query:
+            await self.query.shutdown()
+        if self.recorder:
+            await self.recorder.shutdown()
 
 async def main():
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        print("❌ OPENAI_API_KEY environment variable not set")
-        return
+    print("🚀 API Docs Detection Demo")
+    print("=" * 50)
+    print("📋 This demo will:")
+    print("   1. Monitor your screen for API documentation")
+    print("   2. Detect when you're viewing developer docs")
+    print("   3. Extract function names and URLs automatically")
+    print("   4. Display the results in a structured format")
+    print("=" * 50)
     
-    agent = SimpleAgent(openai_api_key)
+    # Check for OpenAI API key
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    from inframe import ContextRecorder, ContextQuery
+    
+    # Initialize the demo
+    demo = CleanAPIDocsDemo(openai_api_key)
     
     try:
-        await agent.post_init()
-        print("⏳ Monitoring for 60 seconds...")
-        await asyncio.sleep(60)  # Give enough time for queries to run
+        # Step 1: Initialize components
+        print("🔧 Initializing...")
+        if demo.recorder is None:
+            demo.recorder = ContextRecorder(openai_api_key=demo.openai_api_key)
+            demo.query = ContextQuery(openai_api_key=demo.openai_api_key, model="gpt-4o")
+
+        
+        # Step 2: Set up screen recording
+        print("📹 Setting up screen recording...")
+        demo.recorder_id = demo.recorder.add_recorder(
+            include_apps=["Chrome", "Safari", "Firefox", "Edge"],
+            recording_mode="full_screen",
+            visual_task=(
+                "Focus on browser content showing API documentation, developer docs, "
+                "or technical reference materials. Look for: "
+                "- Documentation websites with code examples "
+                "- URLS in the browser address bar, write the full URL down"
+                "Pay special attention to the browser address bar and any visible code examples."
+                "If you see a URL, write it down."
+            )
+        )
+        
+        # Step 3: Start recording
+        print("🎬 Starting screen recording...")
+        success = await demo.recorder.start(demo.recorder_id)
+        if not success:
+            raise Exception("Failed to start recorder")
+        
+        print("✅ Screen monitoring started")
+        print("🔍 Looking for API documentation...")
+        
+        # Step 4: Set up detection query
+        print("🤖 Setting up detection query...")
+        demo.detection_query_id = demo.query.add_query(
+            prompt=(
+                "Is the user currently viewing API documentation, developer docs, "
+                "or technical reference materials? Look for: "
+                "- API documentation websites "
+                "- Function/method documentation "
+                "- Developer portals and reference pages "
+                "Respond with YES or NO."
+            ),
+            recorder=demo.recorder,
+            callback=demo.on_docs_detected,
+            interval_seconds=2
+        )
+
+        # Step 5: Set up details query
+        print("🔍 Setting up details extraction query...")
+        demo.details_query_id = demo.query.add_query(
+            prompt=(
+                "Look at the screen and tell me: "
+                "1. What website or service is being documented? "
+                "2. What is the URL in the browser? "
+                "3. Are there any code examples visible? "
+                "Answer in simple text format."
+            ),
+            recorder=demo.recorder,
+            callback=demo.on_details_extracted,
+            interval_seconds=2
+        )                
+        
+        # Step 6: Start monitoring
+        print("🚀 Starting query monitoring...")
+        await demo.query.start(demo.detection_query_id)
+        
+        # Step 7: Run demo
+        print("\n⏳ Demo running for 60 seconds...")
+        print("   Open any API documentation in your browser to see it in action!")
+        await asyncio.sleep(60)
         
     except KeyboardInterrupt:
-        print("🛑 Keyboard interrupt caught")
+        print("\n🛑 Demo interrupted by user")
         
     except Exception as e:
-        print(f"❌ Error in main: {e}")
+        print(f"\n❌ Demo error: {e}")
         
     finally:
+        # Step 8: Cleanup
         try:
-            await agent.graceful_shutdown()
-            print("✅ Agent shutdown complete")
+            await demo.shutdown()
+            print("✅ Demo shutdown complete")
         except Exception as e:
-            print(f"❌ Error during shutdown: {e}")
-
-def run_with_cleanup():
-    """Run the agent with proper task cleanup to prevent recursion errors"""
-    try:
-        # Run the main function
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("🛑 Keyboard interrupt caught")
-    except Exception as e:
-        print(f"❌ Error: {e}")
+            print(f"❌ Shutdown error: {e}")
 
 if __name__ == "__main__":
-    run_with_cleanup() 
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n🛑 Demo stopped")
+    except Exception as e:
+        print(f"\n❌ Error: {e}") 

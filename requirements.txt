@@ -1,6 +1,6 @@
 opencv-python>=4.5.0,<4.9.0
 mss>=9.0.0
-numpy>=1.21.0,<2.0.0
+numpy>=1.22.0,<2.0.0
 openai>=1.0.0
 pillow>=10.0.0
 faster-whisper>=0.7.0 
@@ -17,4 +17,9 @@ mcp
 fastmcp
 pytest
 pytest-asyncio 
+pytest-cov
+httpx
 inframe
+fastapi>=0.116.0
+aiohttp
+weaviate-client>=3.26.7,<4.0.0

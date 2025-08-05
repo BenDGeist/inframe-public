@@ -16,14 +16,13 @@ dependencies:
   - tk
   - xz
   - ffmpeg
+  - numpy>=1.22.0
+  - opencv
+  - pillow
   - pip:
     - faster-whisper>=0.7.0
-    - opencv-python>=4.5.0,<4.9.0
     - mss>=9.0.0
-    - numpy>=1.21.0,<2.0.0
     - openai>=1.0.0
-    - pillow>=10.0.0
-    - faster-whisper>=0.7.0 
     - transformers>=4.20.0
     - jinja2>=3.0.0
     - torch>=1.11.0
@@ -33,10 +32,16 @@ dependencies:
     - pyobjc-framework-AVFoundation>=9.0
     - pyobjc-framework-Quartz>=9.0
     - pyobjc-framework-ScreenCaptureKit>=9.0
-    - mcp
-    - fastmcp
     - pytest
     - pytest-asyncio
     - inframe
+    - mcp
+    - fastmcp
+    - fastapi>=0.116.0
+    - aiohttp
+    - weaviate-client>=3.26.7,<4.0.0
+    - modal-client
 variables:
   KMP_DUPLICATE_LIB_OK: 'TRUE'
+  PROCESSING_URL: 'https://adscope--processing-service.modal.run'
+  QUERY_URL: 'https://adscope--query-service.modal.run'
